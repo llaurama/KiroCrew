@@ -827,7 +827,14 @@ def _url_payload_command(n: int) -> str:
 #: ``$NAME`` / ``${NAME}`` references with plain string code instead of regex
 #: (``_is_assignment_prefix``, ``_lone_assignment``, a one-pass ``_substitute``).
 #: Raised by 8, from 36,245, for ``_substitute``'s cap on how much text resolving adds.
-_PACKAGE_LINE_BUDGET = 36_253
+#: Raised by 424, from 36,253, to 36,677, for ``mcp_body_fields``: the owner's list of
+#: third-party MCP message-body fields, judged like main's document bodies (the size
+#: ceiling, 256 KiB here, and the path tier; a credential or exfiltration-URL match
+#: is only logged), the size refusal's Settings link, plus its keystone leaf in
+#: ``paths_lists``. A field named for something a server runs, or any field of a
+#: ``kirocrew-*`` server, is never a row, and row names are checked by character
+#: sets rather than patterns. Re-measured.
+_PACKAGE_LINE_BUDGET = 36_677
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second

@@ -507,18 +507,23 @@ class TestLeafOnlyPopulationIsRecorded:
     #:   directory, which agents read and write, so an enclosing mask would hide the
     #:   app's data and leaf-only is the only hold, as for ``host-exec-grants``.
     #:
-    #: One more root-level leaf, three entries per tier (one per data-home path):
+    #: Two more root-level leaves, three entries per tier each (one per data-home path):
     #:
     #: * ``chat_steering_off.json`` -- the steering files each chat switched off,
     #:   sealed read-only so an agent cannot switch off a rule for its own chat. A
     #:   file at the data-home root beside writable siblings, rewritten in place,
     #:   so leaf-only is the only hold, as for ``shared_crew_preview.json``.
+    #: * ``mcp_body_fields.json`` -- the MCP message-body fields the owner
+    #:   allowed, sealed read-only so an agent cannot allow its own fields past
+    #:   the tool_input size ceiling. A file at the data-home root beside
+    #:   writable siblings, so leaf-only is the only hold, as for
+    #:   ``credential_redaction.json``.
     #:
     #: ``import-staging`` adds three entries per tier. The gateway extracts and
     #: removes temporary trees INSIDE this masked directory, never replacing the
     #: directory itself. Its parent is the data-home root beside writable siblings,
     #: so no enclosing stand-in can hold it: leaf-only by design, like update-staging.
-    EXPECTED: dict[str, int] = {"standard": 354, "cc": 361, "strict": 362}
+    EXPECTED: dict[str, int] = {"standard": 357, "cc": 364, "strict": 365}
 
     @pytest.mark.parametrize("tier", TIERS)
     def test_leaf_only_count_has_not_grown(self, tier: str) -> None:
