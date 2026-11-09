@@ -827,7 +827,10 @@ def _url_payload_command(n: int) -> str:
 #: ``$NAME`` / ``${NAME}`` references with plain string code instead of regex
 #: (``_is_assignment_prefix``, ``_lone_assignment``, a one-pass ``_substitute``).
 #: Raised by 8, from 36,245, for ``_substitute``'s cap on how much text resolving adds.
-_PACKAGE_LINE_BUDGET = 36_253
+#: Covers the deny view's Windows program-suffix view (at the program word, past
+#: ``sudo``-style wrappers and ``cmd /c``), its in-word ``^``/backtick view, and the
+#: ``.exe``/``.cmd``/``.bat`` spellings the s3 download reader and scratch ``rm`` view accept.
+_PACKAGE_LINE_BUDGET = 36_295
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
