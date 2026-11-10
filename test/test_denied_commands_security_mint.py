@@ -496,6 +496,15 @@ class TestCredentialMintSegmentScoping:
     def test_mint_spellings_still_blocked(self, origin, cmd):
         assert _denied_by(cmd) == _RULE_MINT
 
+    def test_a_mint_substitution_body_beside_a_stray_single_quote_stays_blocked(self):
+        # A ``${x:+"'"}`` leaves a stray single quote in the de-quoted join, next to
+        # a ``$(<name> <verb>)`` whose body IS the mint.  The substitution body must
+        # still be read as its own command, so the mint stays blocked.  (A single-
+        # quote skip in ``_substitution_bodies`` -- group C -- is reverted; this pins
+        # the class so a skip that hid the body cannot return unnoticed.)
+        cmd = f"""foo ${{x:+"'"}}$({_NAME} {_TOK})"""
+        assert _denied_by(cmd) == _RULE_MINT
+
     def test_hyphenated_spelling_now_blocked(self):
         # NEW COVERAGE: the retired pattern hardcoded the unhyphenated name, so
         # this real invocation form was allowed.

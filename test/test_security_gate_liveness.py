@@ -827,7 +827,32 @@ def _url_payload_command(n: int) -> str:
 #: ``$NAME`` / ``${NAME}`` references with plain string code instead of regex
 #: (``_is_assignment_prefix``, ``_lone_assignment``, a one-pass ``_substitute``).
 #: Raised by 8, from 36,245, for ``_substitute``'s cap on how much text resolving adds.
-_PACKAGE_LINE_BUDGET = 36_253
+#: Raised by 703, from 36,253, for the ssh floor's self-host read of a glob verb
+#: (the execute-position reader is its own owner, ``argv_floor_exec``):
+#: a verb glob with a directory part always keeps host matching, a bare glob only
+#: in execute position (``_executed_program_indices`` over
+#: ``argv_rules._split_commands_indexed``), so a bare glob that only sits in a
+#: program's operands, a comment or a ``case`` arm is a filename, not a self-host;
+#: and ``_array_element_indices`` (reusing ``_array_literals`` beside
+#: ``_array_assignments``), so a bare glob inside an array literal
+#: (``files=( s* *.* )``) is an element, not an executed verb (an opener in a comment
+#: opens nothing, and a separator or comment word ends the elements); and
+#: ``_substitution_positions``, so a word inside ``$( … )`` or backticks
+#: (``n=$(ls s* *.*)``) belongs to the substitution's own frame; and
+#: ``argv_floor_exec._text_without_data_heredocs``, which reads the one heredoc reader
+#: ``shell_commands.read_commands`` and leaves out of the execute-position read a heredoc
+#: body that is certainly data: a statement that expands nothing in a known reader, whose
+#: tag is quoted or whose body runs no ``$(…)``/backtick. A literal verb in a body is
+#: always read. A glob naming several ssh-family programs is refused outright where it may
+#: run -- in program position, after a command wrapper, or as an operand of a known runner
+#: (``argv_floor_exec._KNOWN_RUNNERS``). ``_proven_operand_indices`` leaves EVERY program's
+#: operands alone (a spaced ``* )`` case arm included); its companion
+#: ``_runner_operand_indices`` keeps only the one program a known runner STARTS subject to
+#: the refusal, so a glob among that program's own operands or after any other program
+#: falls through to the ordinary host checks. No
+#: multi-program option walk is needed. A redirect's ``&`` or ``|`` glued to a word
+#: (``>&cat``) does not end a command. Re-measured.
+_PACKAGE_LINE_BUDGET = 36_956
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
