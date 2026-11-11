@@ -346,3 +346,78 @@ class TestCompareAndSetHoldsAcrossProcesses:
             assert (await resp.json())["approval_mode"] == "normal"
         assert KiroCrewConfig.load().agents[seeded_mate].approval_mode == "normal"
         assert slot._trust is True
+
+
+def _hold_shell(name: str, member_id: str = ""):
+    """Record one held shell limit for *name*, as the upgrade does (``mate_held_rules``).
+
+    With *member_id*, the Bot gets that id and the entry is recorded under its
+    old name, so only the id ties the two.
+    """
+    import json
+
+    from kiro_crew.config import paths as paths_mod
+
+    key = name
+    if member_id:
+        cfg = KiroCrewConfig.load()
+        cfg.agents[name].member_id = member_id
+        cfg.save()
+        key = "its-old-name"
+    ledger = paths_mod.mate_agents_dir().parent / "migrated.json"
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    rules = [{"text": "its permissions rule to deny shell", "capability": "shell"}]
+    held = {"held_rules": {key: {"member_id": member_id, "rules": rules}}}
+    ledger.write_text(json.dumps({"migrated": [name], **held}), encoding="utf-8")
+    return member_id, ledger
+
+
+def _shell_call():
+    from kiro_crew.providers.base import EVENT_PERMISSION_REQUEST, LLMEvent
+
+    return LLMEvent(kind=EVENT_PERMISSION_REQUEST, title="ls", request_id="r1", tool_kind="execute")
+
+
+class TestSavingThePermissionLiftsHeldLimits:
+    """The held-limits notice sends the user to Permissions; saving it there ends the hold."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bot_id", ["", "m-zxc"], ids=["by-name", "by-member-id"])
+    async def test_a_saved_permission_clears_the_hold_and_the_bot_uses_it(
+        self, seeded_mate, bot_id
+    ):
+        import json
+
+        from kiro_crew import mate_held_rules
+
+        member_id, ledger = _hold_shell(seeded_mate, bot_id)
+        assert mate_held_rules.held_for(_shell_call(), agent=seeded_mate)
+        async with TestClient(TestServer(_update_app())) as client:
+            resp = await client.put(
+                f"/api/agents/{seeded_mate}",
+                json={"approval_mode": "trust", "expected_approval_mode": ""},
+            )
+            assert resp.status == 200, await resp.text()
+        assert mate_held_rules.held_for(_shell_call(), agent=seeded_mate) == []
+        spec = {"allowedTools": ["execute_bash", "fs_read"]}
+        kept = mate_held_rules.strip_held_approvals(spec, member_id, seeded_mate)
+        assert kept["allowedTools"] == ["execute_bash", "fs_read"]
+        # Only the hold goes: the rest of the record the upgrade keeps stays.
+        assert json.loads(ledger.read_text(encoding="utf-8"))["migrated"] == [seeded_mate]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "body",
+        [
+            {"description": "hi"},
+            {"approval_mode": "trust", "expected_approval_mode": "normal"},
+        ],
+        ids=["another-field", "a-refused-permission"],
+    )
+    async def test_no_saved_permission_keeps_the_hold(self, seeded_mate, body):
+        from kiro_crew import mate_held_rules
+
+        _hold_shell(seeded_mate)
+        async with TestClient(TestServer(_update_app())) as client:
+            await client.put(f"/api/agents/{seeded_mate}", json=body)
+        assert mate_held_rules.held_for(_shell_call(), agent=seeded_mate)

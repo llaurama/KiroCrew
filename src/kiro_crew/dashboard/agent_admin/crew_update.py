@@ -1003,6 +1003,10 @@ async def api_kirocrew_agent_update(request: web.Request) -> web.Response:
             # the saved permission here, under the same config lock as the
             # compare-and-set above, so no browser write can land out of order.
             await _apply_member_approval_to_live_thread(request, name, agent.approval_mode)
+            # The limits an upgrade held for a person end with the person's choice.
+            from kiro_crew.mate_held_rules import lift_held
+
+            await asyncio.to_thread(lift_held, name)
         if "display_name" in changed:
             # The mate's home folder carries its display name. Cleared back to
             # blank, it carries the label the rest of the dashboard falls back
