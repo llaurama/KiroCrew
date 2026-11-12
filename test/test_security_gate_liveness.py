@@ -807,7 +807,7 @@ def _url_payload_command(n: int) -> str:
 #: row only, and ``is_denied`` judges that row on the view while its events keep the
 #: command as submitted. Every other row, an operator's copy, and the rm floor for
 #: ``/`` and ``~`` read the full text. Re-measured.
-#: Raised by 3, from 35,997, for the ``chat_steering_off.json`` leaf on the read-gate
+#: Raised by 3, from 35,997, to 36,000, for the ``chat_steering_off.json`` leaf on the read-gate
 #: floor in ``paths_lists`` (per-chat steering switch-offs). Re-measured.
 #: Raised by 18, from 36,000, to 36,018, for ``paths.py``'s scratch tree-index fence:
 #: artifact reads refuse the canonical index path even during replacement.
@@ -827,7 +827,19 @@ def _url_payload_command(n: int) -> str:
 #: ``$NAME`` / ``${NAME}`` references with plain string code instead of regex
 #: (``_is_assignment_prefix``, ``_lone_assignment``, a one-pass ``_substitute``).
 #: Raised by 8, from 36,245, for ``_substitute``'s cap on how much text resolving adds.
-_PACKAGE_LINE_BUDGET = 36_253
+#: Raised by 199, from 36,253, to 36,452, for turning the structured detectors on and
+#: for the owner's two settings in ``redaction_switch``: ``redaction`` reads pass 1
+#: through the detectors' residual matches, ``text_redaction`` holds the detectors'
+#: tail and releases it at a display boundary, and the keystone record carries the
+#: engine selector and the output-seams switch (its field, parse and writer, a
+#: stored-record read every writer shares so each keeps the others' fields, and the
+#: governance rule every writer returns). The detectors and the seams table live
+#: outside the files this budget counts. Re-measured.
+#: Raised by 31, from 36,452, to 36,483, for the output-seams switch's own governance
+#: row (``redaction_switch.owner_may_disable_seams`` and the shared ``_policy_allows``)
+#: and for ``compat._padded``, so the credential decodes read a base64 run with its
+#: padding left off as the bitmap check does. Both only refuse more. Re-measured.
+_PACKAGE_LINE_BUDGET = 36_483
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
