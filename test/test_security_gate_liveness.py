@@ -827,7 +827,11 @@ def _url_payload_command(n: int) -> str:
 #: ``$NAME`` / ``${NAME}`` references with plain string code instead of regex
 #: (``_is_assignment_prefix``, ``_lone_assignment``, a one-pass ``_substitute``).
 #: Raised by 8, from 36,245, for ``_substitute``'s cap on how much text resolving adds.
-_PACKAGE_LINE_BUDGET = 36_253
+#: Raised by 46, from 36,253, to 36,299, for ``_KIRO_PERMISSION_RULE_LEAVES``
+#: in ``paths_lists`` and the degraded-config check in ``paths.py``: kiro-cli's
+#: permission rule files stay on the write fence while the owner opts in, including
+#: when the config read cannot establish that choice.
+_PACKAGE_LINE_BUDGET = 36_299
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
