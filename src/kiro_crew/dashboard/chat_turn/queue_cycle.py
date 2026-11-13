@@ -7,6 +7,7 @@ stamps the turn's consumed merge cards, ``_schedule_consumed_merge_context_stamp
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 from kiro_crew.dashboard.chat_utils import SYNTHESIS_HELD, SYNTHESIS_UNKNOWN
@@ -523,7 +524,36 @@ async def _send_chat_done(
     broadcast, so a coroutine never reaches the serializer."""
     if payload is None:
         payload = await chat_done_payload(state, slot, continuing=continuing, ends_turn=ends_turn)
+    _report_run_seconds(slot, payload)
     state.broadcast_ws("chat_done", payload)
+
+
+def _report_run_seconds(slot: _ChatSlot, payload: dict[str, Any]) -> None:
+    """Add ``run_seconds`` to the frame that ends a run, and start the next run clean.
+
+    A run is every turn from the first one the ``task`` setter stamped to the
+    completion that hands the floor back: a frame that ends a turn (it carries
+    ``turn``) and is not ``continuing``, or that pauses on a question. A
+    ``continuing`` frame, whose sub-agents, workflow, loop or queue still owe
+    work, and the deferred ``/compact`` acknowledgement, which ends no turn,
+    leave the stamp, so a long run that ends with a short turn is measured whole.
+    A run with no stamp, or whose stamp no turn passed the dispatch gates under,
+    reports no field, which the dashboard reads as unknown."""
+    if "turn" not in payload or (payload.get("continuing") and not payload.get("needs_input")):
+        return
+    started = slot._run_started_at
+    slot._run_started_at = None
+    if started is not None and slot._run_started_turns != slot._turns_started:
+        payload["run_seconds"] = max(0, int(_run_clock() - started))
+
+
+def _run_clock() -> float:
+    """The clock a run is measured on, the one the ``task`` setter stamps with.
+
+    A function so a test can drive the report on a fake clock without replacing
+    ``time.monotonic`` for the event loop and every other caller in the process.
+    """
+    return time.monotonic()
 
 
 async def _hand_off_queue(
