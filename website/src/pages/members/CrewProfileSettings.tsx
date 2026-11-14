@@ -20,6 +20,7 @@ import { useGuideRevealScope } from '../../guide/GuideRevealScope'
 import { cn } from '../../lib/utils'
 import { ProfilePagePushContext } from './CrewProfilePanel'
 import { Row, RowGroup, RowStatic, type TONE } from './profileRow'
+import CrewStartersGroup from './CrewStartersGroup'
 
 /** The approval modes a crewmate's record may pin, in label order; YOLO is process-global. */
 const MODES = ['normal', 'trust_reads', 'trust'] as const
@@ -712,6 +713,7 @@ export default function CrewProfileSettings({ member, slotKey, waiting = false }
           : null}
         testId="crew-profile-dashboard-card-send-error"
       />
+      <CrewStartersGroup member={member} name={name} />
       {/* Its own group, so its caption (what the preview lets the crewmate do)
           sits under it. */}
       <RowGroup caption={t('pages.membersPage.profile_dynamic_capabilities_hint', { name })}>

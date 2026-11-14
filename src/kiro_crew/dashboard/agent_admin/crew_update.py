@@ -648,6 +648,17 @@ async def api_kirocrew_agent_update(request: web.Request) -> web.Response:
         if "description" in body:
             agent.description = body["description"]
             changed.append("description")
+        if "starters" in body:
+            # The owner's button text, never a refusal: what passes is saved and each
+            # value left out is named in ``warnings``; a non-list keeps the saved ones.
+            from kiro_crew.member_starters import clean_starters
+
+            if isinstance(body["starters"], list):
+                agent.starters, dropped = clean_starters(body["starters"])
+                changed.append("starters")
+                warnings.extend(dropped)
+            else:
+                warnings.append("starters must be a list of text; the saved starters were kept")
         if "display_name" in body:
             # Presentation only, but strictly a string: a non-string here would
             # be stored verbatim and then rendered by every roster surface.
