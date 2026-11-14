@@ -83,6 +83,19 @@ def default_workflow_library_dir() -> Path:
     return config_dir() / WORKFLOW_LIBRARY_DIR_NAME
 
 
+def _start_order(item: tuple[float, dict]) -> tuple[str, float]:
+    """Load order: when the run started, then when its file was last written.
+
+    The registry lists runs newest first by insertion order, so loading by file
+    mtime alone would put a long run that finished last above newer runs.
+    """
+    mtime, obj = item
+    events = obj.get("events")
+    first = events[0] if isinstance(events, list) and events else None
+    ts = first.get("ts") if isinstance(first, dict) else None
+    return (ts if isinstance(ts, str) else "", mtime)
+
+
 def _redact(obj):
     """Recursively redact credentials / exfiltration URLs in a JSON-able value
     before it touches disk (defense-in-depth, mirrors the broadcast/persist rule).
@@ -300,5 +313,5 @@ class WorkflowRunStore:
                         ],
                         type(exc).__name__,
                     )
-        out.sort(key=lambda t: t[0])
+        out.sort(key=_start_order)
         return [obj for _, obj in out]

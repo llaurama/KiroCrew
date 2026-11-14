@@ -144,3 +144,28 @@ def test_no_store_is_pure_in_memory(tmp_path) -> None:
     assert reg.load_persisted() == 0  # nothing to load, no crash
     # and no files were created anywhere we control
     assert not list(Path(tmp_path).glob("**/*.json"))
+
+
+def test_the_run_list_keeps_its_order_across_a_restart(tmp_path) -> None:
+    """Runs reload in the order they started, not the order their files were written."""
+    import os
+
+    store = _store(tmp_path)
+    reg_a = RunRegistry(store=store)
+    for rid, started in (
+        ("wf_000001", "2026-01-01T00:00:00Z"),
+        ("wf_000002", "2026-01-01T01:00:00Z"),
+    ):
+        _seed(reg_a, rid)
+        reg_a.record_event(
+            rid, WorkflowEvent(run_id=rid, seq=0, ts=started, type="run_started", data={})
+        )
+        reg_a.mark_terminal(rid, STATUS_FINISHED, result=1)
+    assert [s["run_id"] for s in reg_a.list()] == ["wf_000002", "wf_000001"]
+    # The older run finished last, so its file is the newest on disk.
+    for rid, mtime in (("wf_000002", 1_000_000_000), ("wf_000001", 1_000_000_100)):
+        os.utime(tmp_path / "runs" / f"{rid}.json", (mtime, mtime))
+
+    reg_b = RunRegistry(store=_store(tmp_path))
+    reg_b.load_persisted()
+    assert [s["run_id"] for s in reg_b.list()] == ["wf_000002", "wf_000001"]
