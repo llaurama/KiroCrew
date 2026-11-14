@@ -24,7 +24,10 @@ import re
 import time
 import zipfile
 from pathlib import Path
-from typing import IO
+from typing import IO, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xml.etree.ElementTree import Element
 
 # Optional so a stale install (git pull without `pip install -e .`) degrades
 # to "docx/pptx parsing unavailable" instead of killing every CLI entry at
@@ -134,6 +137,7 @@ def extract_slides(
     filename: str = "",
     max_chars: int | None = None,
     fileobj: IO[bytes] | None = None,
+    strict: bool = False,
 ) -> list[tuple[int, str]]:
     """Extract a .pptx deck's text one slide at a time.
 
@@ -147,12 +151,19 @@ def extract_slides(
     gate), the same *max_chars* aggregate budget and the same *fileobj*
     contract as :func:`extract_text`, and the same failure shape: an empty
     list for a file that is not a .pptx, has no slide text, or fails to parse.
+
+    With *strict*, a deck that fails to parse or whose archive inventory is
+    refused raises instead, so a caller can tell an unreadable file from one
+    with no slide text. A refused path or a missing XML parser still returns the
+    empty list: those are screened by the caller.
     """
     if _admit(path, mimetype, filename, operation="extract_slides") != "pptx":
         return []
     try:
-        return _extract_pptx_slides(path, max_chars=max_chars, fileobj=fileobj)
+        return _extract_pptx_slides(path, max_chars=max_chars, fileobj=fileobj, strict=strict)
     except Exception:
+        if strict:
+            raise
         logger.warning("Failed to extract slides from %s", path, exc_info=True)
     return []
 
@@ -285,11 +296,18 @@ _SLIDE_REL_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relatio
 _SLIDE_RE = re.compile(r"^ppt/slides/slide(\d+)\.xml$")
 
 
-def _pptx_slide_order(zf: zipfile.ZipFile) -> list[tuple[int, str]]:
-    """Resolve presentation positions to internal ZIP members, never filesystem paths."""
+def _pptx_slide_order(zf: zipfile.ZipFile, strict: bool = False) -> list[tuple[int, str]]:
+    """Resolve presentation positions to internal ZIP members, never filesystem paths.
+
+    With *strict*, a container without the presentation part or its
+    relationships raises: it is not a deck, and reading it as one with no
+    slides would let a caller replace a deck's indexed text with nothing.
+    """
     assert _xml_fromstring is not None
     names = set(zf.namelist())
     if "ppt/presentation.xml" not in names:
+        if strict:
+            raise ValueError("not a .pptx deck: no presentation part")
         # Keep best-effort extraction for incomplete containers without an order.
         return sorted(
             (int(match.group(1)), name)
@@ -299,6 +317,8 @@ def _pptx_slide_order(zf: zipfile.ZipFile) -> list[tuple[int, str]]:
     presentation = _read_zip_entry(zf, "ppt/presentation.xml")
     relationships = _read_zip_entry(zf, "ppt/_rels/presentation.xml.rels")
     if presentation is None or relationships is None:
+        if strict:
+            raise ValueError("not a readable .pptx deck: presentation part too large")
         return []
     root = _xml_fromstring(presentation)
     rels = _xml_fromstring(relationships)
@@ -350,8 +370,47 @@ def join_slides(slides: list[tuple[int, str]]) -> str:
     return "\n\n".join(f"--- Slide {num} ---\n{text}" for num, text in slides)
 
 
+def _slide_lines(root: Element) -> list[str]:
+    """The text lines of one parsed slide, in one pass over its elements.
+
+    One line per paragraph: a word set in two formatting runs ("Micro" bold,
+    "services" plain) is one word on the slide, so the runs of a paragraph join
+    with nothing between them, and only a paragraph boundary or a line break
+    inside one starts a new line. A text element outside any paragraph is its
+    own line. A paragraph nested in another belongs to the outermost one, so
+    each text is kept once and crafted nesting costs no more than the slide's
+    size. An explicit stack walks it: nesting depth is attacker-chosen, so
+    recursion would hit the interpreter's limit.
+    """
+    lines: list[str] = []
+    parts: list[str] = []
+    depth = 0  # how many paragraphs enclose the node being visited
+    stack: list[tuple[Element, bool]] = [(root, False)]
+    while stack:
+        node, leaving = stack.pop()
+        if leaving:  # only a paragraph is revisited on the way out
+            depth -= 1
+            if depth == 0:
+                line = "".join(parts)
+                if line.strip():
+                    lines.append(line)
+                parts = []
+            continue
+        tag = node.tag
+        if tag == f"{_A_NS}p":
+            depth += 1
+            stack.append((node, True))
+        elif tag == f"{_A_NS}t" and node.text:
+            (parts if depth else lines).append(node.text)
+        elif tag == f"{_A_NS}br" and depth:
+            parts.append("\n")
+        stack.extend((child, False) for child in reversed(node))
+    return lines
+
+
 def _extract_pptx_slides(
     path: str, max_chars: int | None = None, fileobj: IO[bytes] | None = None,
+    strict: bool = False,
 ) -> list[tuple[int, str]]:
     """Walk a .pptx (ZIP containing ppt/slides/*.xml) and collect each slide's text.
 
@@ -366,19 +425,17 @@ def _extract_pptx_slides(
     if is_sensitive_path(path):
         return []
     if not _vet_archive_inventory(path, fileobj):
+        if strict:
+            raise ValueError("not a readable .pptx archive")
         return []
     slides: list[tuple[int, str]] = []
     collected = 0
     with zipfile.ZipFile(fileobj if fileobj is not None else path, "r") as zf:
-        for num, slide_name in _pptx_slide_order(zf):
+        for num, slide_name in _pptx_slide_order(zf, strict=strict):
             data = _read_zip_entry(zf, slide_name)
             if data is None:
                 continue
-            root = _xml_fromstring(data)
-            texts: list[str] = []
-            for t_elem in root.iter(f"{_A_NS}t"):
-                if t_elem.text:
-                    texts.append(t_elem.text)
+            texts = _slide_lines(_xml_fromstring(data))
             if texts:
                 slide_text = "\n".join(texts)
                 slides.append((num, slide_text))
