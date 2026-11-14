@@ -36,11 +36,40 @@ The `spawn_run` tool accepts:
 - `model` — model override for this spawn (e.g. `deepseek-3.2`)
 - `reasoning_effort` — `low` / `medium` / `high` / `xhigh` / `max`, batch-wide
 - `backend` — the agent harness the run starts on instead of the gateway default (`kiro`, `claude`, `codex`, or any other backend installed and allowed on this gateway), batch-wide. A `tasks` entry can set its own `backend` (and `model`) so one wave can send each task to a different harness. A backend that is not allowed here, not installed on this machine, or installed only after the gateway started (restart the gateway to use it), is refused at spawn time with the list of backends that can start (and, for an allowed one that is missing, the command that installs it) rather than replaced by the default. Pass `model` as an id from that backend's own list. A `spawn_continue` follow-up, and a retry, ask for the same backend as the original run
+- `light` — mark a helper job (search, lookup, run-and-report, summarize) as light, batch-wide; a `tasks` entry's own `true` or `false` wins for that task. See [Light helpers](#light-helpers)
 - `keep` — make the run a continuable conversation with guaranteed resumability and longer retention
 - `cwd` — absolute launch directory, which must be under a configured `subagent_cwd_allowed_roots` entry
 
 Setting `model`, `reasoning_effort` or `backend`, or `keep: true`, forces the
 dedicated-process path instead of session sharing.
+
+#### Light helpers
+
+A helper that only searches, looks something up, runs a command and reports, or
+summarizes rarely needs the chat's model at full reasoning effort. With
+`agent.subagent_light_tier` on, a spawn marked `light` runs on the model in
+`agent.role_models.subagent_light` and the effort in
+`agent.role_efforts.subagent_light`. Both pins can be written through the
+configuration API like the plain sub-agent pins; the Settings page does not list
+them yet:
+
+```json
+{ "agent": { "subagent_light_tier": true,
+             "role_models": { "subagent_light": "claude-haiku-4.5" },
+             "role_efforts": { "subagent_light": "low" } } }
+```
+
+- A `model` or `reasoning_effort` the call names always wins; the light pin fills
+  only the one it left unset.
+- A light spawn beats the plain `agent.role_models.subagent` pin; any other spawn
+  keeps it.
+- A spawn that names an `agent`, a `crew` or a `backend` is not changed.
+- A pinned model or effort starts the sub-agent in its own process, like any
+  per-spawn pin (see above).
+- With the setting off, which is the default, every spawn picks the model and
+  effort it always has. A `light` flag that cannot apply (the setting is off, no
+  pin is set, the pin is not a usable model id) is dropped and the spawn receipt
+  says why.
 
 #### When to delegate
 

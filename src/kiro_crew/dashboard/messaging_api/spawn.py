@@ -377,6 +377,58 @@ def _qualified_model_refusal(
     return None
 
 
+async def _light_tier_pins(
+    cleaned: dict[str, Any],
+    model: str,
+    effort: str,
+    *,
+    named_elsewhere: bool,
+    on_default_backend: bool,
+) -> tuple[str, str, str, str]:
+    """Fill a ``light`` spawn's unset model and effort: ``(model, effort, note, warning)``.
+
+    Applies only to a run the call marked ``light`` while ``agent.subagent_light_tier``
+    is on, and fills only what the call left unset from the ``subagent_light`` role
+    pins, so a model or effort the call names wins. Anything that cannot apply keeps
+    the request exactly as it came, and *warning* says what was dropped; this never
+    refuses a spawn. *named_elsewhere* is a run that names an agent, a crew or a
+    backend of its own, which chose its model already. A model id belongs to one
+    backend's list, so the model pin is used only where the run starts on the gateway
+    default backend (*on_default_backend*), the one the pin was written for.
+    """
+    from kiro_crew.validation_parts.input_bounds import _MODEL_NAME_RE
+
+    if cleaned.get("light") is not True:
+        return model, effort, "", ""
+    try:
+        agent_cfg = (await asyncio.to_thread(KiroCrewConfig.load)).agent
+    except Exception:
+        return model, effort, "", "light ignored: the configuration could not be read"
+    if not agent_cfg.subagent_light_tier:
+        return model, effort, "", "light ignored: agent.subagent_light_tier is off"
+    if named_elsewhere:
+        return model, effort, "", "light ignored: the run names its own agent, crew or backend"
+    pin_model = "" if model else agent_cfg.role_models.get("subagent_light", "")
+    pin_effort = "" if effort else agent_cfg.role_efforts.get("subagent_light", "")
+    warning = ""
+    if pin_model and not (on_default_backend and _MODEL_NAME_RE.match(pin_model)):
+        pin_model = ""
+        warning = "light model dropped: agent.role_models.subagent_light is not usable here"
+    if not (pin_model or pin_effort) and not (model and effort) and not warning:
+        warning = "light ignored: agent.role_models.subagent_light and role_efforts are unset"
+    note = ""
+    if pin_model or pin_effort:
+        note = "light tier: " + ", ".join(
+            part
+            for part in (
+                f"model {pin_model}" if pin_model else "",
+                f"reasoning_effort {pin_effort}" if pin_effort else "",
+            )
+            if part
+        )
+    return pin_model or model, pin_effort or effort, note, warning
+
+
 async def api_spawn(request: web.Request) -> web.Response:
     """POST /api/spawn — spawn a subagent.
 
@@ -446,6 +498,7 @@ async def api_spawn(request: web.Request) -> web.Response:
                 "target_member": body.get("target_member", ""),
                 "backend": body.get("backend", ""),
                 "label": body.get("label", ""),
+                **({"light": body["light"]} if isinstance(body.get("light"), bool) else {}),
             },
             SPAWN_RUN_SCHEMA,
         )
@@ -610,6 +663,15 @@ async def api_spawn(request: web.Request) -> web.Response:
     cwd = cleaned.get("cwd") or ""
     model = cleaned.get("model") or ""
     reasoning_effort = cleaned.get("reasoning_effort") or ""
+    model, reasoning_effort, light_note, light_warning = await _light_tier_pins(
+        cleaned,
+        model,
+        reasoning_effort,
+        named_elsewhere=bool(agent or crew or cleaned.get("backend")),
+        on_default_backend=backend is None,
+    )
+    if "light" in body and not isinstance(body["light"], bool):
+        light_warning = "light ignored: it must be true or false"
     can_work = parent_work_supported(state, parent_session)
     # Batch/wave identity (transport-layer params from spawn_run MCP, like
     # approval_mode/silent above): validated inline, bounded, never LLM-schema.
@@ -790,7 +852,7 @@ async def api_spawn(request: web.Request) -> web.Response:
     # pin, else the session chain for the effective agent — a crew's pin, else
     # a non-sentinel global). Additive, optional key — reporting only, never
     # changes whether the spawn happened.
-    if reasoning_effort:
+    if cleaned.get("reasoning_effort"):
         # Read the allocation-owned namespace on the loop. A reporting failure
         # cannot undo the submission or turn an unknown selection into "auto".
         selection: tuple[str, str] | None
@@ -876,6 +938,10 @@ async def api_spawn(request: web.Request) -> web.Response:
     runtime_note = await asyncio.to_thread(_runtime_note)
     if runtime_note:
         resp["runtime_note"] = runtime_note
+    if light_note:
+        resp["light"] = _redact(light_note)
+    if light_warning:
+        resp["warning"] = _redact(light_warning)
     if keep:
         # The conversation id is the FIRST run's id: spawn_continue targets it.
         resp["conversation"] = info.id
