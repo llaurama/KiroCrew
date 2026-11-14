@@ -110,6 +110,20 @@ def _history_key(slot: Any) -> str:
         return ""
 
 
+def _running_turn_pin(slot: Any) -> tuple[str, bool] | None:
+    """The running turn's own project and whether it is a scratch fallback.
+
+    The pin carries the turn generation it was taken in, so one left by an
+    earlier turn is never read as the project of the turn running now. The flag
+    is true when the chat's stored project is a hidden scratch folder the turn
+    fell back from, which is no pick the chip should show as pending.
+    """
+    pin = getattr(slot, "_turn_project_pin", None)
+    if pin is None or not slot.turn_running or pin[0] != slot._turn_generation:
+        return None
+    return pin[1], pin[2]
+
+
 def resolved_row_identity(slot: Any) -> str:
     """The identity the sidebar renders this slot under: its own local key.
 
@@ -391,6 +405,7 @@ class SlotProjection:
         # dashboard turn would tell the open pane, which already saw that turn
         # end, that this running row is stale, and the pane would stay idle --
         # no Stop, and Resume offered on a reply still being written.
+        turn_pin = _running_turn_pin(slot)
         turn_identity: dict[str, object] = (
             {}
             if turn_in_flight and not slot.turn_running
@@ -556,6 +571,11 @@ class SlotProjection:
                 slot.turn_running and getattr(slot, "_wake_starting_task", None) is slot.task
             ),
             **turn_identity,
+            # The directory the running turn's process works in, which a
+            # mid-reply pick does not move (``project`` follows the pick). Null
+            # when no dashboard turn runs or it has not claimed its session yet.
+            "turn_project": turn_pin[0] if turn_pin else None,
+            "turn_project_fallback": bool(turn_pin and turn_pin[1]),
             # An automatic compaction in flight on this session. Separate from
             # `running` because it is NOT a dashboard turn: the composer reads
             # idle while it holds the session, which without this field looks
