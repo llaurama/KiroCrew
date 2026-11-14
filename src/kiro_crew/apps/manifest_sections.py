@@ -617,6 +617,11 @@ class Permissions:
     # slots:app:<this-app> / subagent:app:<this-app> declarations to observe
     # this app's slots and subagents. Empty list = no cross-app visibility.
     exposeToApps: list[str] = field(default_factory=list)  # noqa: N815
+    #: May browse, edit and copy whichever memory provider is active, through
+    #: ``/api/memory/provider`` (never switch it: that is the owner's press on a
+    #: host-rendered sheet). Shown at the trust prompt, needs the owner's consent,
+    #: and every call is an audit record naming the app.
+    memoryAdmin: bool = False  # noqa: N815
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {}
@@ -656,6 +661,8 @@ class Permissions:
             d["desktopCapabilities"] = self.desktopCapabilities
         if self.exposeToApps:
             d["exposeToApps"] = self.exposeToApps
+        if self.memoryAdmin:
+            d["memoryAdmin"] = True
         return d
 
     @classmethod
@@ -690,6 +697,7 @@ class Permissions:
             reachableByUserSessions=declared_verbs(data.get("reachableByUserSessions")),
             desktopCapabilities=declared_capabilities(data.get("desktopCapabilities")),
             exposeToApps=_granted_list(data.get("exposeToApps")),  # noqa: N815
+            memoryAdmin=data.get("memoryAdmin") is True,  # noqa: N815
         )
 
 

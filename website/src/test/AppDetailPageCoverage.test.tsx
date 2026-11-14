@@ -880,6 +880,18 @@ describe('AppDetailPage — uncovered surfaces', () => {
     await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ composerActions: ['summarize:insert'] })))
   })
 
+  it('holds back the memory provider prefix memoryAdmin opens and approves it', async () => {
+    getApp.mockResolvedValue(installedApp({
+      manifest: { displayName: 'Ledger Lens', permissions: { api: [], events: [], memoryAdmin: true } },
+      approvedGrants: { api: [], events: [] },
+    }))
+    renderDetail()
+    await loaded()
+    expect(screen.getByText('/api/memory/provider')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Approve new permissions' }))
+    await waitFor(() => expect(enableApp).toHaveBeenCalledWith(NAME, false, expect.objectContaining({ api: ['/api/memory/provider'] })))
+  })
+
   it('lists a held-back worker auto-approve grant and approves its one entry', async () => {
     getApp.mockResolvedValue(installedApp({
       manifest: { displayName: 'Ledger Lens', permissions: { api: [], events: [], workerAutoApprove: true } },

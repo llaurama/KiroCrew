@@ -827,7 +827,10 @@ def _url_payload_command(n: int) -> str:
 #: ``$NAME`` / ``${NAME}`` references with plain string code instead of regex
 #: (``_is_assignment_prefix``, ``_lone_assignment``, a one-pass ``_substitute``).
 #: Raised by 8, from 36,245, for ``_substitute``'s cap on how much text resolving adds.
-_PACKAGE_LINE_BUDGET = 36_253
+#: Raised by 6, from 36,253, to 36,259, for ``memory_provider_consent.json`` on the
+#: crew secret-leaf list, beside ``decisions_consent.json``: the record authorizes
+#: memory to leave the machine, so the file-tool gate fences it like that one.
+_PACKAGE_LINE_BUDGET = 36_259
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second

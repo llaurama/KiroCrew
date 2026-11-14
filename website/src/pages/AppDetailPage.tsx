@@ -76,6 +76,7 @@ import { stagedGrantsOf } from './appDetailPageStagedGrants'
 // Callers import the two art components from this module.
 export { HeroBanner, ScreenshotGallery }
 
+
 export default function AppDetailPage() {
   const { name } = useParams<{ name: string }>()
   const [app, setApp] = useState<AppInfo | null>(null)

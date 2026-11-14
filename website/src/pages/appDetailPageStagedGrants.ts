@@ -8,11 +8,20 @@
 import type { AppInfo } from './appDetailPageTypes'
 import { knownDesktopCapabilities } from '../components/appstore/desktopCapabilities'
 
+/** The API prefix `permissions.memoryAdmin` grants (`apps/point_grants.py`). */
+const MEMORY_ADMIN_API_PREFIX = '/api/memory/provider'
+
 export function stagedGrantsOf(app: AppInfo | null) {
   // Declared api/events entries outside the approved set (`approvedGrants`) are
   // held back: the app runs without them until the owner approves them here.
+  // `memoryAdmin` is granted as the one API prefix it opens (`apps/point_grants.py`),
+  // so an update that adds it waits here like any declared `api` entry.
+  const declaredApi = [
+    ...(app?.manifest?.permissions?.api || []),
+    ...(app?.manifest?.permissions?.memoryAdmin === true ? [MEMORY_ADMIN_API_PREFIX] : []),
+  ]
   const stagedApi = app?.approvedGrants
-    ? (app.manifest?.permissions?.api || []).filter(p => !(app.approvedGrants?.api || []).includes(p))
+    ? declaredApi.filter(p => !(app.approvedGrants?.api || []).includes(p))
     : []
   const stagedEvents = app?.approvedGrants
     ? (app.manifest?.permissions?.events || []).filter(e => !(app.approvedGrants?.events || []).includes(e))
