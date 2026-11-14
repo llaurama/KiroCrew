@@ -26,6 +26,7 @@ from kiro_crew.dashboard.kiro_relay.caller import RELAY_TEAMMATE_WS_FLAG, is_rel
 from kiro_crew.dashboard.origin import check_origin
 from kiro_crew.dashboard.skill_read_ahead import read_ahead as read_skills_ahead
 from kiro_crew.dashboard.slot_list_pass import shared_slot_pass
+from kiro_crew.dashboard.slot_read_state import read_state_of
 from kiro_crew.dashboard.slot_retention import note_foreground
 from kiro_crew.dashboard.state import (
     PERSISTED_SUBAGENT_REPLAY_KEEP,
@@ -632,21 +633,19 @@ def _grant_auditee(ws: web.WebSocketResponse, ws_app: str) -> str:
 def _handle_slot_read(
     state: DashboardState, slot_key: object, read_ts: object = None, *, owner: bool
 ) -> bool:
-    """Relay a client's ``slot_read`` frame to every owner window.
+    """Store a client's ``slot_read`` and relay it to every owner window.
 
     A window sends this when the user reads a slot there (opens it, toggles
-    mark-as-read, or watches a message land in its visible active slot). The
-    gateway rebroadcasts it so every other window retires that slot's unread
-    bubble too. Pure relay — the server keeps no read-state: unread is a
-    frontend concept (Redux + localStorage per window) and stays one; this
-    only carries the gesture between windows sharing the gateway.
-
+    mark-as-read, or watches a message land in its visible active slot).
     ``read_ts`` is the read WATERMARK the sending window computed: the newest
-    message timestamp it knew for the slot at the read. It is relayed opaquely
-    (bounded string, no parsing); receivers keep any badge their window
-    recorded for a newer message, so an in-flight relay cannot erase a
-    message the reader had not seen. Absent or invalid, the frame relays
-    without one and receivers apply their conservative default.
+    message timestamp it knew for the slot at the read. ``slot_read_state``
+    keeps the newest one per slot (rows carry it as ``last_read_ts``), and the
+    broadcast carries that stored time, so the echo doubles as the sender's
+    acknowledgement and a resent or older read can never move it back.
+    Receivers keep any badge their window recorded for a newer message, so an
+    in-flight relay cannot erase a message the reader had not seen. With no
+    usable time stored, the frame relays without one and receivers apply their
+    conservative default.
 
     Owner-only, mirroring ``_handle_slot_focused``: an app-scoped socket must
     not clear the user's badges, and ``broadcast_ws_owners`` keeps the echo
@@ -665,8 +664,9 @@ def _handle_slot_read(
     if not isinstance(slot_key, str) or not slot_key or len(slot_key) > 512:
         return False
     payload: dict = {"slot": slot_key}
-    if isinstance(read_ts, str) and read_ts and len(read_ts) <= 64:
-        payload["read_ts"] = read_ts
+    stored = read_state_of(state).advance(slot_key, read_ts)
+    if stored is not None:
+        payload["read_ts"] = stored
     state.broadcast_ws_owners("slot_read", payload)
     return True
 

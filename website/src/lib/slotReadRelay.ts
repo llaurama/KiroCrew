@@ -42,6 +42,22 @@ export function noteUnsavedRowTs(slot: string, ts: string | undefined): void {
   if (next !== undefined) unsavedRowTs.set(slot, next)
 }
 
+/** Newest row ts that arrived while `slot` was on screen in this window, per slot.
+ *  An unfocused window shows a row without relaying a read, and the live rule
+ *  never badges it there; the gateway-read rule (`serverReads`) counts it as
+ *  read here too, so leaving the slot does not light it. */
+const shownHereTs = new Map<string, string>()
+
+export function noteShownHere(slot: string, ts: string | undefined): void {
+  if (!slot || !ts) return
+  const next = newerTs(shownHereTs.get(slot), ts)
+  if (next !== undefined) shownHereTs.set(slot, next)
+}
+
+export function shownHere(slot: string): string | undefined {
+  return shownHereTs.get(slot)
+}
+
 /** Bind (or unbind, by passing a no-op) the wire sender. useWebSocket only. */
 export function bindSlotReadSender(impl: (slot: string, readTs?: string) => void): void {
   sendSlotReadImpl = impl
@@ -117,5 +133,6 @@ export function _resetSlotReadRelayForTest(): void {
   for (const e of pending.values()) clearTimeout(e.timer)
   pending.clear()
   unsavedRowTs.clear()
+  shownHereTs.clear()
   sendSlotReadImpl = () => {}
 }

@@ -31,6 +31,7 @@ import { bindSlotReadSender, emitSlotRead, flushSlotRead, _resetSlotReadRelayFor
 import { setViewedThreadSlot, _resetViewedThreadForTests } from '../lib/viewedThread'
 import { sharedItem } from './unreadStorageTestUtils'
 import { flushSharedUnread } from '../store/dashboard/unread'
+import { queuedReads } from '../lib/readOutbox'
 
 /** Flip jsdom's document.hidden and fire the visibilitychange the hook listens for. */
 const setDocumentHidden = (v: boolean) => {
@@ -728,5 +729,62 @@ describe('hidden-tab reveal relay (single store end-to-end)', () => {
     // reveal reads the slot's own post-flush last_ts, which the reducer keeps
     // monotonic, so the relay carries the newest arrival's ts.
     expect(sentReadFrames(ws)).toEqual([JSON.stringify({ type: 'slot_read', slot: ACTIVE, read_ts: '2026-09-10T00:00:05Z' })])
+  })
+})
+
+describe('gateway read times over the dashboard socket (single store)', () => {
+  const READ = '2026-11-13T10:00:00+00:00'
+  const REPLY = '2026-11-13T11:00:00+00:00'
+  const listed = (extra: Partial<ChatSlot> = {}): ChatSlot => ({
+    key: BACKGROUND, title: BACKGROUND, messages: 2, running: false,
+    last_read_ts: READ, last_agent_ts: REPLY, last_ts: REPLY, ...extra,
+  } as ChatSlot)
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    _resetSlotReadRelayForTest()
+    WS_INSTANCES.length = 0
+    vi.stubGlobal('WebSocket', MockWebSocket)
+    globalStore.dispatch(setActiveSlot(null))
+  })
+
+  afterEach(() => {
+    if (globalStore.getState().dashboard.unreadSlots.includes(BACKGROUND)) globalStore.dispatch(markSlotRead(BACKGROUND))
+    _resetSlotReadRelayForTest()
+    vi.unstubAllGlobals()
+    globalStore.dispatch(removeSlotOptimistic(BACKGROUND))
+  })
+
+  function mountOnSingleton() {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: React.ReactNode }) => createElement(Provider, { store: globalStore },
+      createElement(QueryClientProvider, { client: qc }, children))
+    const hook = renderHook(() => useWebSocket(), { wrapper })
+    const ws = WS_INSTANCES[0]
+    act(() => { ws.simulateOpen() })
+    return { ...hook, ws }
+  }
+  const sentReadFrames = (ws: MockWebSocket) =>
+    ws.send.mock.calls.map(c => c[0] as string).filter(f => f.includes('"slot_read"'))
+
+  it('the first slot list badges a reply that arrived while no window was open', () => {
+    const { ws } = mountOnSingleton()
+    act(() => { ws.simulateMessage({ type: 'slots', data: [listed()] }) })
+    expect(globalStore.getState().dashboard.unreadSlots).toContain(BACKGROUND)
+  })
+
+  it('a read made while the socket was down is kept, sent from the next list, and confirmed by the echo', () => {
+    const { ws } = mountOnSingleton()
+    ws.readyState = MockWebSocket.CLOSED
+    emitSlotRead(BACKGROUND, REPLY)
+    expect(sentReadFrames(ws)).toEqual([])
+    flushSlotRead(BACKGROUND)
+    ws.readyState = MockWebSocket.OPEN
+    act(() => { ws.simulateMessage({ type: 'slots', data: [listed()] }) })
+    expect(globalStore.getState().dashboard.unreadSlots).not.toContain(BACKGROUND)
+    expect(sentReadFrames(ws)).toEqual([JSON.stringify({ type: 'slot_read', slot: BACKGROUND, read_ts: REPLY })])
+    act(() => { ws.simulateMessage({ type: 'slot_read', data: { slot: BACKGROUND, read_ts: REPLY } }) })
+    expect(queuedReads()).toEqual({})
   })
 })

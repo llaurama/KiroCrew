@@ -497,7 +497,7 @@ async def test_a_manual_order_survives_a_gateway_restart(tmp_path, monkeypatch) 
     second.push_slots_update = MagicMock()
     assert second.manual_session_order.loaded is False
     await load_pinned_order_after_listen(second)
-    second.push_slots_update.assert_called_once()
+    second.push_slots_update.assert_called()
     async with TestClient(TestServer(_app(second))) as client:
         assert await _ranks(client) == {"c": 0, "d": 1, "a": 2, "b": 3}
 

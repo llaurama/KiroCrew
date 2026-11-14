@@ -362,12 +362,10 @@ class TestSlotFocusedFrame:
 
 
 class TestSlotReadFrame:
-    """ws._handle_slot_read: the cross-window unread-badge read relay.
+    """ws._handle_slot_read: store the read time, relay it to every owner window.
 
-    A window that read a slot tells the gateway; the gateway rebroadcasts to
-    every owner window so their bubbles retire too. Pure relay — no server
-    read-state — so the contract under test is small: owner-gated, validated
-    slot key, one owner-scoped broadcast.
+    Owner-gated, validated slot key, one owner-scoped broadcast that carries the
+    stored (newest) read time, so a resent or older read never moves it back.
     """
 
     def _state(self):
@@ -380,7 +378,8 @@ class TestSlotReadFrame:
         assert _handle_slot_read(state, "t1", owner=True) is True
         state.broadcast_ws_owners.assert_called_once_with("slot_read", {"slot": "t1"})
 
-    def test_read_watermark_is_relayed_opaquely(self):
+    def test_read_watermark_is_stored_and_relayed(self):
+        from kiro_crew.dashboard.slot_read_state import read_state_of
         from kiro_crew.dashboard.ws import _handle_slot_read
 
         state = self._state()
@@ -388,13 +387,26 @@ class TestSlotReadFrame:
         state.broadcast_ws_owners.assert_called_once_with(
             "slot_read", {"slot": "t1", "read_ts": "2026-09-10T00:00:00Z"}
         )
+        assert read_state_of(state).reads == {"t1": "2026-09-10T00:00:00Z"}
+
+    def test_older_read_relays_the_newer_stored_time(self):
+        """The echo is the sender's acknowledgement: it names what is stored."""
+        from kiro_crew.dashboard.ws import _handle_slot_read
+
+        state = self._state()
+        _handle_slot_read(state, "t1", "2026-09-10T00:00:05+00:00", owner=True)
+        state.broadcast_ws_owners.reset_mock()
+        _handle_slot_read(state, "t1", "2026-09-10T00:00:01+00:00", owner=True)
+        state.broadcast_ws_owners.assert_called_once_with(
+            "slot_read", {"slot": "t1", "read_ts": "2026-09-10T00:00:05+00:00"}
+        )
 
     def test_junk_read_watermark_is_dropped_but_frame_relays(self):
         """A bad watermark degrades to a watermark-less relay (receivers apply
         their conservative default) rather than dropping the read gesture."""
         from kiro_crew.dashboard.ws import _handle_slot_read
 
-        for junk in (42, "", "x" * 65, {"ts": "y"}):
+        for junk in (42, "", "x" * 65, {"ts": "y"}, "not a time"):
             state = self._state()
             assert _handle_slot_read(state, "t1", junk, owner=True) is True
             state.broadcast_ws_owners.assert_called_once_with("slot_read", {"slot": "t1"})

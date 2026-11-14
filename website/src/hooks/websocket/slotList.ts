@@ -14,6 +14,7 @@ import { CHAT_FOLDERS_WRITE_KEY } from '../../api/chatFoldersWrite'
 import { autoBatched } from '../../lib/streamBatch'
 import { noteAppSlotRows } from '../../utils/appSlotPush'
 import { createSlotStorageSweep } from '../../utils/slotStorageSweep'
+import { applyServerReads } from './serverReads'
 
 export interface SlotListSync {
   /** A new connection: forget the last-seen generations and raw frame. */
@@ -188,6 +189,7 @@ export function useSlotListSync(
       const snapshotSeenBefore = beforeSettle.slotsSnapshotSeen === true
       dispatch(sseSlots(data))
       lastSlotsArrayRef.current = store.getState().dashboard.slots
+      applyServerReads(lastSlotsArrayRef.current, { dispatch, queryClient })
       // localStorage is a side effect, so the orphan sweep runs here, after the
       // reducers have applied this frame's hold fields and rows.
       if (Array.isArray(data)) {
@@ -399,6 +401,8 @@ export function useSlotListSync(
         dispatch(reconcileSubagentQueuedFromSlots(patchRows))
       }
       dispatch(sseSlotPatch(frame))
+      const patched = new Set(patchRows.map(row => row?.key))
+      applyServerReads(store.getState().dashboard.slots.filter(slot => patched.has(slot.key)), { dispatch, queryClient })
       noteAppSlotRows(frame.slots)
       notifyAppsSlotsChanged()
     }
