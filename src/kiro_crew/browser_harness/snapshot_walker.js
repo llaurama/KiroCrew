@@ -28,6 +28,12 @@
   // characters, so a snapshot past NODE_CAP nodes carries nothing it would show.
   var CONSOLE_TEXT_CAP = 2000;
   var NODE_CAP = 1500;
+  // `glance` bounds: elements looked at, entries per list, and the text kept for a
+  // name or a message (the gateway cuts them shorter and cleans them again).
+  var GLANCE_SCAN_CAP = 600;
+  var GLANCE_LIST_CAP = 10;
+  var GLANCE_NAME_CAP = 80;
+  var GLANCE_TEXT_CAP = 240;
   // Cross-origin frames one snapshot hands the gateway to read (ops.py FRAME_READ_CAP).
   var FRAME_SLOT_CAP = 8;
   var INTERACTIVE_TAGS = { a: true, button: true, input: true, select: true, textarea: true };
@@ -1071,6 +1077,86 @@
         }
       }
       return false;
+    },
+
+    // A cheap read of what an action can change, taken before and after it
+    // (`browser.report_changes`): the address and title, the in-page dialogs, the
+    // alert and status text, the fields the page marks invalid, and a `role|name`
+    // key for each visible control. It mints no refs and does not enter frames or
+    // shadow roots. A field is named by its label, never by its value, and a secret
+    // field is left out whole.
+    glance: function () {
+      var out = { url: location.href, title: document.title, controls: [], dialogs: [],
+                  alerts: [], invalid: [], truncated: false };
+      function clip(text, cap) {
+        return String(text || "").replace(/\s+/g, " ").trim().slice(0, cap);
+      }
+      function idsText(el, attr) {
+        var parts = [];
+        var ids = (el.getAttribute(attr) || "").split(/\s+/).filter(Boolean);
+        for (var i = 0; i < ids.length && i < 4; i++) {
+          var n = document.getElementById(ids[i]);
+          if (n) parts.push(n.textContent || "");
+        }
+        return clip(parts.join(" "), GLANCE_TEXT_CAP);
+      }
+      function fieldLabel(el) {
+        var named = idsText(el, "aria-labelledby") || clip(el.getAttribute("aria-label"), GLANCE_NAME_CAP);
+        if (named) return named;
+        if (el.labels && el.labels.length) {
+          var l = clip(el.labels[0].textContent, GLANCE_NAME_CAP);
+          if (l) return l;
+        }
+        return clip(el.getAttribute("placeholder") || el.getAttribute("title") ||
+                    el.getAttribute("name"), GLANCE_NAME_CAP);
+      }
+      var scanned = document.querySelectorAll(
+        "a[href],button,input,select,textarea,[role],[tabindex],[contenteditable]");
+      for (var i = 0; i < scanned.length; i++) {
+        var el = scanned[i];
+        if (i >= GLANCE_SCAN_CAP) { out.truncated = true; break; }
+        var role = roleFor(el);
+        if (!interactive(el, role) || !visible(el)) continue;
+        var tag = el.tagName.toLowerCase();
+        var type = inputType(el);
+        // An editable region is a field too: its name would otherwise be its text.
+        var isField = tag === "select" || tag === "textarea" || el.isContentEditable ||
+          (tag === "input" && ["button", "submit", "reset", "image"].indexOf(type) === -1);
+        if (isField && secretish(el)) continue;
+        var name = isField ? fieldLabel(el) : accName(el);
+        out.controls.push((role || "generic") + "|" + clip(name, GLANCE_NAME_CAP));
+      }
+      var found = document.querySelectorAll("dialog[open],[role=\"dialog\"],[role=\"alertdialog\"]");
+      for (var d = 0; d < found.length && out.dialogs.length < GLANCE_LIST_CAP; d++) {
+        if (!shown(found[d])) continue;
+        var head = found[d].querySelector("h1,h2,h3,[role=\"heading\"]");
+        out.dialogs.push(idsText(found[d], "aria-labelledby") ||
+          clip(found[d].getAttribute("aria-label") || (head && head.textContent), GLANCE_NAME_CAP) || "dialog");
+      }
+      var live = document.querySelectorAll("[role=\"alert\"],[role=\"status\"],[aria-live=\"assertive\"]");
+      for (var a = 0; a < live.length && out.alerts.length < GLANCE_LIST_CAP; a++) {
+        if (!shown(live[a])) continue;
+        var said = clip(live[a].innerText || live[a].textContent, GLANCE_TEXT_CAP);
+        if (said) out.alerts.push(said);
+      }
+      var fields = document.querySelectorAll("input,select,textarea");
+      for (var f = 0; f < fields.length && f < GLANCE_SCAN_CAP && out.invalid.length < GLANCE_LIST_CAP; f++) {
+        var field = fields[f];
+        var flagged = field.getAttribute("aria-invalid") === "true";
+        if (!flagged) {
+          try { flagged = field.matches(":user-invalid"); } catch (e) { flagged = false; }
+        }
+        if (!flagged || !shown(field)) continue;
+        var why = "";
+        // A secret field's message can echo what was typed: say only that it is invalid.
+        if (!secretish(field)) {
+          why = idsText(field, "aria-errormessage") || idsText(field, "aria-describedby") ||
+            clip(field.validationMessage, GLANCE_TEXT_CAP);
+        }
+        var label = fieldLabel(field) || "field";
+        out.invalid.push(why ? label + ": " + why : label);
+      }
+      return out;
     }
   };
   return api;

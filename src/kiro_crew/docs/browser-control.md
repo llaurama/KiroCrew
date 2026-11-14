@@ -76,6 +76,21 @@ agent's other steps fail with `dialog_open`, which says what the dialog asks. Th
 dialog is only reported. An `action` or `text` that is not valid is skipped and
 named in a warning on the result.
 
+**What a step changed.** With `browser.report_changes` on (off by default), a
+`click`, `type` or `select_option` answer also carries `changes`, so the agent
+does not need a page read after each step to see the result. It lists what the
+step changed in the page's own document: the new address (without its query or
+fragment) and title, a dialog that opened or closed, new alert or status text, new
+validation messages, and the controls that appeared or went away. A JavaScript
+dialog the step opened is reported as `js_dialog`; `{"no_change_seen": true}`
+means none of those moved. Every piece of page text is cut to one short, redacted
+line. A field is named by its label, never by its value, and a password or other
+secret field is left out. Content inside frames is not compared, and a page with
+more than 600 elements has its controls left uncompared. Each step waits a third
+of a second for the page to react, and the reads around it are bounded, so a slow
+page costs the report and never the step: the step's own result stands, with a
+`warning`.
+
 It **never types a password**. A password field is refused, and the live view
 masks one, so a sign-in is always your step through takeover.
 
