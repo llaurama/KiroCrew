@@ -638,17 +638,19 @@ async def api_theme_config(request: web.Request) -> web.Response:
             updates[flag] = body[flag]
     # A real int only, for the same reason: ``True`` is an int in Python and
     # would store as 1.
-    if "privacy_ack_version" in body:
-        version = body["privacy_ack_version"]
+    for key in ("privacy_ack_version", "kiro_telemetry_ack_version"):
+        if key not in body:
+            continue
+        version = body[key]
         if (
             not isinstance(version, int)
             or isinstance(version, bool)
             or not 0 <= version <= PRIVACY_ACK_VERSION_MAX
         ):
             raise web.HTTPBadRequest(
-                text=f"privacy_ack_version must be an integer from 0 to {PRIVACY_ACK_VERSION_MAX}"
+                text=f"{key} must be an integer from 0 to {PRIVACY_ACK_VERSION_MAX}"
             )
-        updates["privacy_ack_version"] = version
+        updates[key] = version
 
     if updates:
 

@@ -52,7 +52,7 @@ from kiro_crew.config.loader import KiroCrewConfig
 from kiro_crew.config.paths import config_dir
 from kiro_crew.metrics import destination_filter
 from kiro_crew.metrics import harness as _harness
-from kiro_crew.metrics import otlp_endpoints, otlp_governance, otlp_session
+from kiro_crew.metrics import kiro_export, otlp_endpoints, otlp_governance, otlp_session
 from kiro_crew.metrics.behavioral_metrics import BEHAVIORAL_SCOPE
 
 # The env-var pins and the export opt-in live in ``consent_pins`` (this module's
@@ -821,6 +821,7 @@ def _endpoints_key(tel: object, ceiling: object = _READ_NOW) -> object:
     """
     try:
         raw = [getattr(tel, "otlp_endpoint", None), getattr(tel, "otlp_endpoints", None)]
+        raw.append(kiro_export.notice_shown())  # a newly shown notice attaches its reader
         if edition.is_lts():
             if ceiling is _READ_NOW:
                 # A process with no context reads an already-composed provider
@@ -882,18 +883,16 @@ def _build_recorder() -> _Build:
     ceiling = _policy_ceiling() if edition.is_lts() else _READ_NOW
     destinations = _otlp_destinations(cfg, ceiling)
     endpoints_key = _endpoints_key(cfg, ceiling)
-    # Recording on is not consent to export (a policy collector included);
-    # checked only when a destination exists.
+    # Recording on alone exports only to the built-in Kiro destination (kiro_export).
     outbound: Optional[bool] = None
     if destinations:
         outbound = outbound_consented(full_cfg)
-    if destinations and not outbound:
+    if destinations and not outbound and not all(map(kiro_export.is_builtin, destinations)):
         logger.info(
-            "telemetry export waits for an explicit opt-in to recording "
-            "(telemetry.enabled: true in config.json, or KIROCREW_TELEMETRY=1); "
-            "local only"
+            "telemetry export to configured destinations waits for an explicit opt-in "
+            "to recording (telemetry.enabled: true in config.json, or KIROCREW_TELEMETRY=1)"
         )
-        destinations = ()
+    destinations = kiro_export.exported(destinations, full_cfg, outbound)
 
     # PeriodicExportingMetricReader starts its daemon ticker thread inside
     # __init__, so if any later step (MeterProvider construction, etc.) raises,
@@ -1084,7 +1083,8 @@ def _egress_degraded() -> tuple:
 
 def live_recorder_state() -> "tuple[bool, bool]":
     """(recording, exporting) of this process's live recorder right now."""
-    return _built_consent is True, _built_outbound is True
+    live = _built_consent is True
+    return live, live and (_built_outbound is True or kiro_export.last_build_kept())
 
 
 def otlp_egress_active(cfg: "TelemetryConfig") -> bool:
@@ -1296,7 +1296,8 @@ def _otlp_destinations(
     the views, batching); an edition owns only WHERE it goes, which it declares
     through ``TelemetryProvider.otlp_destinations``. The public default turns
     ``telemetry.otlp_endpoint`` into exactly one destination, so a standalone
-    build behaves as it did when this module constructed that exporter itself.
+    build behaves as it did when this module constructed that exporter itself
+    (then each list entry, then ``metrics/kiro_export.py``'s destination).
 
     Lenient by design, unlike :func:`otlp_egress_active`: on this path an
     unresolvable provider must not export, so it contributes nothing and
@@ -1425,8 +1426,8 @@ def _build_otlp_reader(dest: "OtlpDestination", cfg: object) -> Optional["_Reade
     """Build one OTLP/HTTP metric reader for *dest*, or None when unavailable.
 
     Egress is OFF by default: reaching here at all means an edition named a
-    destination (the public default does so only when ``telemetry.otlp_endpoint``
-    is a non-empty string). The OTLP exporter lives in the separate
+    destination AND recording was explicitly opted in (``outbound_consented``).
+    The OTLP exporter lives in the separate
     ``otlp`` package extra (install its exporter directly -- see
     :mod:`kiro_crew.extras`), not the hard dependency set. If a host opts in without
     installing it, we log a warning and degrade to local-only rather than
