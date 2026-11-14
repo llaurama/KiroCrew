@@ -1055,6 +1055,29 @@ def test_a_cut_after_a_closed_code_block_adds_no_fence() -> None:
     assert all("```" not in part for part in parts[1:])
 
 
+_LINKED_PARAGRAPH = " ".join(
+    f"See <https://example.com/docs/design/section-{i}|the design doc> for item {i}."
+    for i in range(80)
+)
+
+
+def test_a_long_line_is_never_cut_inside_a_slack_link() -> None:
+    """Each post holds whole ``<url|label>`` tokens, so every link stays a link."""
+    parts = slack_format.split_message(_LINKED_PARAGRAPH, limit=SLACK_MSG_LIMIT)
+    assert len(parts) > 1
+    assert all(len(part) <= SLACK_MSG_LIMIT for part in parts)
+    for part in parts:
+        body = part.removesuffix(CONTINUATION)
+        assert body.count("<") == body.count(">"), body[-60:]
+    assert all(not part.startswith(("|", "sign/", "section-")) for part in parts[1:])
+
+
+def test_a_token_longer_than_a_post_is_cut_at_the_limit_with_no_stub_post() -> None:
+    text = "see <https://" + "a" * 8000 + "|x> end"
+    parts = slack_format.split_message(text, limit=SLACK_MSG_LIMIT)
+    assert len(parts[0]) == SLACK_MSG_LIMIT
+
+
 @pytest.mark.parametrize("width", range(3860, 3900, 3))
 def test_a_line_too_long_for_one_post_after_its_reopened_block_is_cut_inside_it(
     width: int,
